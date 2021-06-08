@@ -26,7 +26,7 @@ var dockerPool *dockertest.Pool // the connection to docker
 // nolint:gochecknoglobals
 var systemdb *sql.DB // the connection to the mysql 'system' database
 // nolint:gochecknoglobals
-var sqlConfig *mysql.Config // the mysql container and config for connecting to other databases
+var sqlConfig *Config // the mysql container and config for connecting to other databases
 // nolint:gochecknoglobals
 var testMu *sync.Mutex // controls access to sqlConfig
 
@@ -51,17 +51,21 @@ func TestMain(m *testing.M) {
 		log.Fatalf("could not start mysqlContainer: %s", err)
 	}
 
-	sqlConfig = &mysql.Config{
-		User:                 "root",
-		Passwd:               "secret",
-		Net:                  "tcp",
-		Addr:                 fmt.Sprintf("localhost:%s", mysqlContainer.GetPort("3306/tcp")),
-		DBName:               "mysql",
-		AllowNativePasswords: true,
+	sqlConfig = &Config{
+		Config: mysql.Config{
+			User:                 "root",
+			Passwd:               "secret",
+			Net:                  "tcp",
+			Addr:                 fmt.Sprintf("localhost:%s", mysqlContainer.GetPort("3306/tcp")),
+			DBName:               "mysql",
+			AllowNativePasswords: true,
+		},
+		killPoolSize: 2,
+		killTimeout:  time.Second,
 	}
 
 	if err = dockerPool.Retry(func() error {
-		systemdb, err = sql.Open("mysql", sqlConfig.FormatDSN())
+		systemdb, err = sql.Open(cancellableDriverName, sqlConfig.FormatDSN())
 		if err != nil {
 			return err
 		}
@@ -91,7 +95,7 @@ func TestCancel(t *testing.T) {
 	testCancelConfig.DBName = "TestCancel"
 	var dbStd *sql.DB
 	if err := dockerPool.Retry(func() error {
-		dbStd, err = sql.Open("mysql", testCancelConfig.FormatDSN())
+		dbStd, err = sql.Open(cancellableDriverName, testCancelConfig.FormatDSN())
 		if err != nil {
 			return err
 		}
@@ -99,10 +103,6 @@ func TestCancel(t *testing.T) {
 	}); err != nil {
 		log.Fatal(err)
 	}
-
-	dbKiller, err := sql.Open("mysql", testCancelConfig.FormatDSN())
-	dbKiller.SetMaxOpenConns(1)
-	pool := &DB{DB: dbStd, KillerPool: dbKiller}
 
 	procs, err := helperFullProcessList(dbStd)
 	assert.NoError(t, err)
@@ -114,12 +114,9 @@ func TestCancel(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	conn, err := pool.Conn(ctx)
-	assert.NoError(t, err)
-	defer conn.Close()
 
 	go func() {
-		_, err = conn.ExecContext(ctx, "select benchmark(9999999999, md5('I like traffic lights'))")
+		_, err = dbStd.ExecContext(ctx, "select benchmark(9999999999, md5('I like traffic lights'))")
 		assert.Equal(t, context.DeadlineExceeded, err)
 	}()
 
