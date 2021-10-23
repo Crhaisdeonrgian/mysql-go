@@ -1,98 +1,106 @@
-# Canceling MySQL in Go [![GoDoc](http://godoc.org/github.com/rocketlaunchr/mysql-go?status.svg)](http://godoc.org/github.com/rocketlaunchr/mysql-go) [![Go Report Card](https://goreportcard.com/badge/github.com/rocketlaunchr/mysql-go)](https://goreportcard.com/report/github.com/rocketlaunchr/mysql-go)
+# Canceling MySQL in Go
 
-This package will properly implement context cancelation for MySQL. Without this package, context cancelation does not actually cancel a MySQL query.
+A MySQL-Driver for Go's [database/sql](https://golang.org/pkg/database/sql/) package which properly implement context cancelation for MySQL.
 
 See [Article](https://medium.com/@rocketlaunchr.cloud/canceling-mysql-in-go-827ed8f83b30) for details of the behind-the-scenes magic.
 
-The API is designed to resemble the standard library. It is fully compatible with the [dbq](https://github.com/rocketlaunchr/dbq) package which allows for zero boilerplate database operations in Go.
+---------------------------------------
+* [Features](#features)
+* [Requirements](#requirements)
+* [Installation](#installation)
+* [Usage](#usage)
+    * [DSN (Data Source Name)](#dsn-data-source-name)
+        * [Parameters](#parameters)
+    * [Cancel Query](#cancel-query)
+* [License](#license)
+* [Final Notes](#final-notes)
 
-⭐ **the project to show your appreciation.**
+---------------------------------------
 
-## Dependencies
+## Features
+* Wrapper over standard [Go MySQL Driver](https://github.com/go-sql-driver/mysql)
+* Automatic killing queries on context cancellation 
+* Automatic connection pooling (by [database/sql](https://golang.org/pkg/database/sql/) package)
 
--   [Go MySQL Driver](https://github.com/go-sql-driver/mysql)
+
+## Requirements
+The same as for imported version of [Go MySQL Driver](https://github.com/go-sql-driver/mysql)
+
+---------------------------------------
 
 ## Installation
-
+Simple install the package to your [$GOPATH](https://github.com/golang/go/wiki/GOPATH "GOPATH") with the [go tool](https://golang.org/cmd/go/ "go command") from shell:
+```bash
+$ go get -u github.com/dati-mipt/mysql-go
 ```
-go get -u github.com/rocketlaunchr/mysql-go
-```
+Make sure [Git is installed](https://git-scm.com/downloads) on your machine and in your system's `PATH`.
 
-## QuickStart
+## Usage
+This is implementation of Go's `database/sql/driver` interface. You only need to import the driver and can use the full [`database/sql`](https://golang.org/pkg/database/sql/) API then.
+
+Use `mysqlc` as `driverName` and a valid [DSN](#dsn-data-source-name)  as `dataSourceName`:
 
 ```go
-
 import (
-   sql "github.com/rocketlaunchr/mysql-go"
+	"database/sql"
+	"time"
+
+	_ "github.com/dati-mipt/mysql-go"
 )
 
-pool, _ := sql.Open("user:password@tcp(localhost:3306)/db")
+// ...
 
-```
-
-## Read Query
-
-```go
-
-// Obtain an exclusive connection
-conn, err := pool.Conn(ctx)
-defer conn.Close() // Return the connection back to the pool
-
-// Perform your read operation.
-rows, err := conn.QueryContext(ctx, stmt)
+db, err := sql.Open("mysqlc", "user:password@/dbname")
 if err != nil {
-   return err
+	panic(err)
 }
-
+// See "Important settings" section.
+db.SetConnMaxLifetime(time.Minute * 3)
+db.SetMaxOpenConns(10)
+db.SetMaxIdleConns(10)
 ```
 
-## Write Query
+[Examples are available in Wiki of standard mysql driver](https://github.com/go-sql-driver/mysql/wiki/Examples "Go-MySQL-Driver Examples").
 
-```go
+### DSN (Data Source Name)
 
-// Obtain an exclusive connection
-conn, err := pool.Conn(ctx)
-defer conn.Close() // Return the connection back to the pool
-
-// Perform the write operation
-tx, err := conn.BeginTx(ctx, nil)
-
-_, err = tx.ExecContext(ctx, stmt)
-if err != nil {
-   return tx.Rollback()
-}
-
-tx.Commit()
+The Data Source Name has a common format, like e.g. [PEAR DB](http://pear.php.net/manual/en/package.database.db.intro-dsn.php) uses it, but without type-prefix (optional parts marked by squared brackets):
+```
+[username[:password]@][protocol[(address)]]/dbname[?param1=value1&...&paramN=valueN]
 ```
 
-## Cancel Query
+#### Parameters
+*Parameters are case-sensitive!*
+
+In addition to [Go MySQL Driver](https://github.com/go-sql-driver/mysql) parameters, this wrapper introduces some new params:
+
+##### `killPoolSize`
+```
+Type:          decimal number
+Default:       1
+```
+
+Size of connection pool for killing queries.
+
+##### `killTimeout`
+
+```
+Type:           duration
+Default:        5s
+```
+
+Timeout of kill operation.
+
+### Cancel Query
 
 Cancel the context. This will send a `KILL` signal to MySQL automatically.
 
-It is highly recommended you set a KillerPool when you instantiate the `DB` object.
-
-The KillerPool is used to call the `KILL` signal.
-
-## Reverse Proxy Support
-
-Checkout the `proxy-protection` branch if your database is behind a reverse proxy in order to better guarantee that you are killing the correct query.
-
-## Other useful packages
-
--   [dataframe-go](https://github.com/rocketlaunchr/dataframe-go) - Statistics and data manipulation
--   [dbq](https://github.com/rocketlaunchr/dbq) - Zero boilerplate database operations for Go
--   [igo](https://github.com/rocketlaunchr/igo) - A Go transpiler with cool new syntax such as fordefer (defer for for-loops)
--   [react](https://github.com/rocketlaunchr/react) - Build front end applications using Go
--   [remember-go](https://github.com/rocketlaunchr/remember-go) - Cache slow database queries
-
-#
-
-### Legal Information
+## License
 
 The license is a modified MIT license. Refer to `LICENSE` file for more details.
 
 **© 2018-19 PJ Engineering and Business Solutions Pty. Ltd.**
 
-### Final Notes
+## Final Notes
 
 Feel free to enhance features by issuing pull-requests.
