@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"time"
 )
 
@@ -16,11 +17,18 @@ type cancellableMysqlConn struct {
 	kto          time.Duration
 }
 
+func new_cancellableMysqlConn(conn driver.Conn,
+	killerPool *sql.DB,
+	connectionID string,
+	kto time.Duration) *cancellableMysqlConn {
+	fmt.Println("create new connection!!!" + connectionID)
+	return &cancellableMysqlConn{conn, killerPool, connectionID, kto}
+}
+
 func (c *cancellableMysqlConn) Unleak() {
 	c.killerPool = nil
 	c.connectionID = ""
 }
-
 func (c *cancellableMysqlConn) Ping(ctx context.Context) error {
 	var connPinger = c.conn.(driver.Pinger)
 

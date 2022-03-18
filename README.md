@@ -104,3 +104,11 @@ The license is a modified MIT license. Refer to `LICENSE` file for more details.
 ## Final Notes
 
 Feel free to enhance features by issuing pull-requests.
+
+## ELSE
+
+sudo docker run -it --memory=2g --cpu="1.0" ubuntu
+
+https://github.com/ory/dockertest/blob/2b0896a948c60f3207381d9fc259d0fc13227c30/dockertest.go#L161
+change  RunOption struct and RunWithOption method so we can change Memory
+// trird param is for it
