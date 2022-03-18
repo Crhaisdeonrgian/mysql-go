@@ -6,6 +6,9 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"github.com/go-sql-driver/mysql"
+	"io/ioutil"
+	"log"
 	"time"
 )
 
@@ -14,6 +17,12 @@ type cancellableMysqlConn struct {
 	killerPool   *sql.DB
 	connectionID string
 	kto          time.Duration
+}
+
+func new_cancellableMySQLConn(conn driver.Conn, db *sql.DB, ConnectionID string, kto time.Duration) *cancellableMysqlConn{
+	_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0))
+	log.Printf("New connection %s created!", ConnectionID)
+	return &cancellableMysqlConn{conn, db, ConnectionID, kto}
 }
 
 func (c *cancellableMysqlConn) Unleak() {
@@ -89,6 +98,7 @@ func (c *cancellableMysqlConn) QueryContext(ctx context.Context, query string, a
 	defer func() {
 		if ctx.Err() != nil {
 			kill(c.killerPool, c.connectionID, c.kto)
+
 		}
 	}()
 
@@ -145,4 +155,7 @@ func (c *cancellableMysqlConn) IsValid() bool {
 func (c *cancellableMysqlConn) CheckNamedValue(nv *driver.NamedValue) (err error) {
 	var namedValueChecker = c.conn.(driver.NamedValueChecker)
 	return namedValueChecker.CheckNamedValue(nv)
+}
+func Bench(){
+
 }
