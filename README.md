@@ -103,4 +103,4 @@ The license is a modified MIT license. Refer to `LICENSE` file for more details.
 
 ## Final Notes
 
-Feel free to enhance features by issuing pull-requests.
+Feel free to enhance features by issuing pull-requests..
