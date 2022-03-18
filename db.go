@@ -6,9 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"time"
-
 	"github.com/go-sql-driver/mysql"
+	"time"
 )
 
 const (
@@ -20,6 +19,8 @@ const (
 type CancellableMySQLDriver struct{}
 
 var originalDriver = mysql.MySQLDriver{}
+
+var CancelModeUsage bool
 
 func init() {
 	sql.Register(cancellableDriverName, &CancellableMySQLDriver{})
@@ -80,15 +81,17 @@ func (c *cancellableConnector) Connect(ctx context.Context) (driver.Conn, error)
 
 	// Determine the connection's connection_id
 	var connectionID string
-	if connectionID, err = determineConnectionId(ctx, conn); err != nil {
-		conn.Close()
-		return nil, err
+	if(CancelModeUsage){
+		if connectionID, err = determineConnectionId(ctx, conn); err != nil {
+			conn.Close()
+			return nil, err
+		}
 	}
 
 	if c.killPool == nil {
 		return &cancellableMysqlConn{conn, c.killPool, connectionID, c.killTimeout}, nil
 	}
-	return &cancellableMysqlConn{conn, c.killPool, connectionID, c.killTimeout}, nil
+	return new_cancellableMySQLConn(conn, c.killPool, connectionID, c.killTimeout), nil
 }
 
 // Driver implements driver.Connector interface.
