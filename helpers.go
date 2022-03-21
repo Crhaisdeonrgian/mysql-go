@@ -53,6 +53,7 @@ func kill(db *sql.DB, connectionID string, kto time.Duration) error {
 
 	if kto == 0 {
 		_, err := db.Exec(qry)
+		fmt.Printf("Connection %s killed\n", connectionID)
 		if err != nil {
 			return err
 		}

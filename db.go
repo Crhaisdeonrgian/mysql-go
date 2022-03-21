@@ -57,7 +57,6 @@ func (d CancellableMySQLDriver) OpenConnector(dsn string) (driver.Connector, err
 
 	var killPool = sql.OpenDB(killConnector)
 	killPool.SetMaxOpenConns(cfg.killPoolSize)
-
 	return &cancellableConnector{
 		connector:   connector,
 		killPool:    killPool,
@@ -71,8 +70,6 @@ type cancellableConnector struct {
 	killTimeout time.Duration
 }
 
-// Connect implements driver.Connector interface.
-// Connect returns a connection to the database.
 func (c *cancellableConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	var conn, err = c.connector.Connect(ctx)
 	if err != nil {
@@ -89,10 +86,13 @@ func (c *cancellableConnector) Connect(ctx context.Context) (driver.Conn, error)
 	}
 
 	if c.killPool == nil {
-		return &cancellableMysqlConn{conn, c.killPool, connectionID, c.killTimeout}, nil
+		return new_cancellableMysqlConn(conn, c.killPool, connectionID, c.killTimeout), nil
 	}
 	return new_cancellableMySQLConn(conn, c.killPool, connectionID, c.killTimeout), nil
 }
+
+// Connect implements driver.Connector interface.
+// Connect returns a connection to the database.
 
 // Driver implements driver.Connector interface.
 // Driver returns &CancellableMySQLDriver{}.

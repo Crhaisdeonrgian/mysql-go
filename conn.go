@@ -29,7 +29,6 @@ func (c *cancellableMysqlConn) Unleak() {
 	c.killerPool = nil
 	c.connectionID = ""
 }
-
 func (c *cancellableMysqlConn) Ping(ctx context.Context) error {
 	var connPinger = c.conn.(driver.Pinger)
 
