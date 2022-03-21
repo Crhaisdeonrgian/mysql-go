@@ -201,15 +201,8 @@ Loop:
 			break Loop
 		}
 	}
-}*/
-func CreateDatabaseTable(db *sql.DB) {
-	var err error
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS abobd  (o int AUTO_INCREMENT PRIMARY KEY, a varchar(40) )")
-	fmt.Println("2")
-	if err != nil {
-		log.Fatal(err)
-	}
 }
+
 
 func CreateDatabaseTable(db *sql.DB) {
 	var err error
@@ -303,86 +296,6 @@ func TestDemo(t *testing.T){
 	done<-true
 	fmt.Println("we re done")
 }
-func ShowDatabases() {
-	var err error
-	var rows *sql.Rows
-	rows, err = systemdb.Query("show databases")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-	second_params := make([]string, 0)
-	for rows.Next() {
-		var second string
-		if err := rows.Scan(&second); err != nil {
-			log.Fatal(err)
-		}
-		second_params = append(second_params, second)
-	}
-	log.Println("all the bases")
-	log.Println(strings.Join(second_params, " "))
-}
-func CheckRows(db *sql.DB) int {
-	var err error
-	var rows *sql.Rows
-	queryctx, querycancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer querycancel()
-	rows, err = db.QueryContext(queryctx, "select count(*) from abobd")
-	if err != nil {
-		log.Fatal(err)
-	}
-	for rows.Next() {
-		var first int
-		if err := rows.Scan(&first); err != nil {
-			log.Fatal(err)
-		}
-		return first
-	}
-	return 0
-}
-func TestSimple(t *testing.T) {
-	var err error
-	var rows *sql.Rows
-	_ = rows
-	var dbStd *sql.DB
-	testMu.Lock()
-	benchTestConfig := sqlConfig
-	testMu.Unlock()
-	benchTestConfig.DBName = "BigBench"
-	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
-	assert.NoError(t, err)
-	dbStd, err = sql.Open("mysqlc", // Cancelable driver instead of mysql
-		benchTestConfig.FormatDSN())
-	if err != nil {
-		log.Fatal(err)
-	}
-	_ = dbStd //	log.Printf("%d", CheckRows(dbStd))
-	//time.Sleep(60 * time.Second)
-	//FillDataBaseTable(dbStd, rowsCount)
-}
-func BenchmarkBench(b *testing.B) {
-	var err error
-	var rows *sql.Rows
-	var dbStd *sql.DB
-	testMu.Lock()
-	benchTestConfig := sqlConfig
-	testMu.Unlock()
-	benchTestConfig.DBName = "BigBench"
-	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
-	assert.NoError(b, err)
-	dbStd, err = sql.Open("mysql", // Cancelable driver instead of mysql
-		benchTestConfig.FormatDSN())
-	if err != nil {
-		log.Fatal(err)
-	}
-	//TODO: Посмотреть почему processList ломается:
-	/*procs, err := helperFullProcessList(dbStd)
-	  assert.NoError(b, err)*/
-	// выводит между
-	/*filterDB := func(m mySQLProcInfo) bool { return m.DB == benchTestConfig.DBName }
-	  filterState := func(m mySQLProcInfo) bool { return m.State == "executing" }
-	  procs = procs.Filter(filterDB, filterState)
-	  assert.Len(b, procs, 0)*/
 
 func BenchmarkHardQuery(b *testing.B){
 	var err error
