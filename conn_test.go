@@ -22,6 +22,13 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+func TestBench(t *testing.T) {
+	simplebanch(20, foo)
+}
+func foo() {
+	return
+}
+
 type mySQLProcInfo struct {
 	ID      int64   `db:"Id"`
 	User    string  `db:"User"`
