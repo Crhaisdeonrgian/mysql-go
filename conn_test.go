@@ -39,7 +39,7 @@ type mySQLProcInfo struct {
 type mySQLProcsInfo []mySQLProcInfo
 
 func init(){
-	CancelModeUsage = false
+	CancelModeUsage = true
 }
 
 func helperFullProcessList(db *sql.DB) (mySQLProcsInfo, error) {
@@ -227,6 +227,67 @@ func FillDataBaseTable(db *sql.DB, count int) {
 
 const rowsCount = 10000
 const iterationCount = 100
+var fakeRows *sql.Rows
+
+func TestDemo(t *testing.T){
+	var err error
+	var dbStd *sql.DB
+	testMu.Lock()
+	benchTestConfig := sqlConfig
+	testMu.Unlock()
+	benchTestConfig.DBName = "BigBench"
+	assert.NoError(t, err)
+	dbStd, err = sql.Open(driverName, benchTestConfig.FormatDSN())
+	if err != nil {
+		log.Fatal(err)
+	}
+	done:= make(chan bool)
+	hardTicker:=time.NewTicker(5*time.Second)
+	mediumTicker:= time.NewTicker(2*time.Second)
+	go func(){
+		for{
+			select{
+			case <-done:
+				return
+			case now:=<-hardTicker.C:
+				queryctx, querycancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer querycancel()
+				fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a")
+				//assert.Equal(t, context.DeadlineExceeded, err)
+				if err != nil {
+					assert.Equal(t, context.DeadlineExceeded, err)
+				}
+				fmt.Println("hard query done", now)
+			}
+		}
+	}()
+	go func(){
+		for{
+			select{
+			case <-done:
+				return
+			case now:=<-mediumTicker.C:
+				queryctx, querycancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer querycancel()
+				start:=time.Now()
+				fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one")
+				if err != nil {
+					assert.Equal(t, context.DeadlineExceeded, err)
+				}
+				fmt.Println("medium query done for ", time.Since(start)," ", now)
+			}
+		}
+	}()
+
+
+	time.Sleep(180*time.Second)
+	hardTicker.Stop()
+	mediumTicker.Stop()
+	done<-true
+	fmt.Println("we re done")
+
+
+}
 
 func BenchmarkHardQuery(b *testing.B){
 	var err error
@@ -290,7 +351,7 @@ func BenchmarkHardQueryDefault(b *testing.B){
 	for i := 0; i < b.N; i++ {
 		queryctx, querycancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer querycancel()
-		_, err = dbStd.QueryContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a")
+		fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a")
 		assert.Equal(b, context.DeadlineExceeded, err)
 	}
 }
@@ -389,7 +450,6 @@ func TestSimple(t *testing.T){
 }
 func BenchmarkBench(b *testing.B) {
 	var err error
-	var rows *sql.Rows
 	var dbStd *sql.DB
 	testMu.Lock()
 	benchTestConfig := sqlConfig
@@ -425,15 +485,14 @@ func BenchmarkBench(b *testing.B) {
 		//log.Printf("%d", CheckRows(dbStd))
 
 		if i % 10 ==0 {
-			rows, err = dbStd.QueryContext(queryctx, "select count(*) from abobd as one left join abobd as two on one.o != two.o left join abobd as three on one.o != three.o left join abobd as four on one.o != four.o")
+			fakeRows, err = dbStd.QueryContext(queryctx, "select count(*) from abobd as one left join abobd as two on one.o != two.o left join abobd as three on one.o != three.o left join abobd as four on one.o != four.o")
 			assert.Equal(b, context.DeadlineExceeded, err)
 		} else{
-			rows, err = dbStd.QueryContext(queryctx, "select a from abobd where o = 1")
+			fakeRows, err = dbStd.QueryContext(queryctx, "select a from abobd where o = 1")
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
-		_ = rows
 
 		/*defer rows.Close()
 		   first_params := make([]int, 0)
