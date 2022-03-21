@@ -7,6 +7,9 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"github.com/go-sql-driver/mysql"
+	"io/ioutil"
+	"log"
 	"time"
 )
 
@@ -31,7 +34,7 @@ func determineConnectionId(ctx context.Context, conn driver.Conn) (string, error
 
 	var value = queryResult[0]
 	var connectionID = string(value.([]uint8))
-
+	log.Printf("Connection with ID=%s was determined!", connectionID)
 	return connectionID, nil
 }
 
@@ -39,7 +42,9 @@ func determineConnectionId(ctx context.Context, conn driver.Conn) (string, error
 // It is advised that db be another pool that the
 // connection was NOT derived from.
 func kill(db *sql.DB, connectionID string, kto time.Duration) error {
-
+	if !CancelModeUsage {
+		return nil
+	}
 	if connectionID == "" {
 		return nil
 	}
@@ -56,6 +61,10 @@ func kill(db *sql.DB, connectionID string, kto time.Duration) error {
 		ctx, cancelFunc := context.WithTimeout(context.Background(), kto)
 		defer cancelFunc()
 		_, err := db.ExecContext(ctx, qry)
+		if err == nil{
+			_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0))
+			log.Printf("Connection %s has been closed! \n", connectionID)
+		}
 		if err != nil {
 			return err
 		}

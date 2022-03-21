@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"github.com/ory/dockertest"
-	dc "github.com/ory/dockertest/docker"
+	"github.com/ory/dockertest/docker"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"log"
@@ -22,6 +23,7 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
+
 func TestBench(t *testing.T) {
 	simplebanch(20, foo)
 }
@@ -29,6 +31,9 @@ func foo() {
 	return
 }
 
+
+
+const driverName = "mysqlc"
 type mySQLProcInfo struct {
 	ID      int64   `db:"Id"`
 	User    string  `db:"User"`
@@ -42,8 +47,13 @@ type mySQLProcInfo struct {
 
 type mySQLProcsInfo []mySQLProcInfo
 
+
+func init(){
+	CancelModeUsage = true
+}
+
 func helperFullProcessList(db *sql.DB) (mySQLProcsInfo, error) {
-	dbx := sqlx.NewDb(db, "mysql")
+	dbx := sqlx.NewDb(db, driverName)
 	var procs []mySQLProcInfo
 	if err := dbx.Select(&procs, "show full processlist"); err != nil {
 		return nil, err
@@ -103,18 +113,14 @@ func TestMain(m *testing.M) {
 		Repository: "mysql",
 		Tag:        "5.6",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
-		Mounts:     []string{"/home/user/go/mounts:/var/lib/mysql"},
+		Mounts:     []string{"/Users/igorvozhga/DIPLOMA/mountDir:/var/lib/mysql"},
 	}
-	fmt.Println("Hello")
-	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func(host_config *dc.HostConfig) {
-		//host_config.CPUCount = 1                    //1Cpu
-		host_config.Memory = 1024 * 1024 * 1024 * 2 // 2Gb
+	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func (hostcfg *docker.HostConfig){
+		hostcfg.Memory = 1024*1024*1024*2 //2Gb
 	})
-	fmt.Println("bye")
 	if err != nil {
 		log.Fatalf("could not start mysqlContainer: %s", err)
 	}
-
 	sqlConfig = &mysql.Config{
 		User:                 "root",
 		Passwd:               "secret",
@@ -125,7 +131,7 @@ func TestMain(m *testing.M) {
 	}
 
 	if err = dockerPool.Retry(func() error {
-		systemdb, err = sql.Open("mysqlc", sqlConfig.FormatDSN())
+		systemdb, err = sql.Open(driverName, sqlConfig.FormatDSN())
 		if err != nil {
 			return err
 		}
@@ -144,7 +150,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-/*
 func TestCancel(t *testing.T) {
 	fmt.Println("1")
 	var err error
@@ -206,6 +211,15 @@ func CreateDatabaseTable(db *sql.DB) {
 	}
 }
 
+func CreateDatabaseTable(db *sql.DB) {
+	var err error
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS abobd  (o int AUTO_INCREMENT PRIMARY KEY, a varchar(40) )")
+	fmt.Println("2")
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func FillDataBaseTable(db *sql.DB, count int) {
 	var tx *sql.Tx
 	var err error
@@ -229,64 +243,65 @@ func FillDataBaseTable(db *sql.DB, count int) {
 }
 
 const rowsCount = 10000
-const iterationCount = 5
+const iterationCount = 100
+var fakeRows *sql.Rows
 
-func BenchmarkHardQuery(b *testing.B) {
+func TestDemo(t *testing.T){
 	var err error
-	var rows *sql.Rows
-	_ = rows
 	var dbStd *sql.DB
 	testMu.Lock()
 	benchTestConfig := sqlConfig
 	testMu.Unlock()
 	benchTestConfig.DBName = "BigBench"
-	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
-	assert.NoError(b, err)
-	dbStd, err = sql.Open("mysqlc", // Cancelable driver instead of mysql
-		benchTestConfig.FormatDSN())
+	assert.NoError(t, err)
+	dbStd, err = sql.Open(driverName, benchTestConfig.FormatDSN())
 	if err != nil {
 		log.Fatal(err)
 	}
-	// 5 больших и 10 средних: контекст дедлайн -- четверть минуты, меняем дрйвер
-	// в станд плодятся тяжелые и срежние почти не крутятся
-	// каждые 5 секунд медл на 15 с и каждую секунду средний, работаем минуту
-	b.N = iterationCount
-	for i := 0; i < b.N; i++ {
-		// go func() {
-		queryctx, querycancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-		_ = queryctx
-		defer querycancel()
-		_, err = dbStd.ExecContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a")
-		assert.Equal(b, context.DeadlineExceeded, err)
-	}
-}
-
-func BenchmarkSimpleQueries(b *testing.B) {
-	var err error
-	var rows *sql.Rows
-	_ = rows
-	var dbStd *sql.DB
-	testMu.Lock()
-	benchTestConfig := sqlConfig
-	testMu.Unlock()
-	benchTestConfig.DBName = "BigBench"
-	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
-	assert.NoError(b, err)
-	dbStd, err = sql.Open("mysqlc", // Cancelable driver instead of mysql
-		benchTestConfig.FormatDSN())
-	if err != nil {
-		log.Fatal(err)
-	}
-	b.N = iterationCount
-	for i := 0; i < b.N; i++ {
-		// go func() {
-		queryctx, querycancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer querycancel()
-		_, err = dbStd.QueryContext(queryctx, "select * from abobd where o = 1")
-		if err != nil {
-			log.Fatal(err)
+	done:= make(chan bool)
+	hardTicker:=time.NewTicker(5*time.Second)
+	mediumTicker:= time.NewTicker(2*time.Second)
+	go func(){
+		for{
+			select{
+			case <-done:
+				return
+			case now:=<-hardTicker.C:
+				queryctx, querycancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer querycancel()
+				fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a")
+				//assert.Equal(t, context.DeadlineExceeded, err)
+				if err != nil {
+					assert.Equal(t, context.DeadlineExceeded, err)
+				}
+				fmt.Println("hard query done", now)
+			}
 		}
-	}
+	}()
+	go func(){
+		for{
+			select{
+			case <-done:
+				return
+			case now:=<-mediumTicker.C:
+				queryctx, querycancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer querycancel()
+				start:=time.Now()
+				fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one")
+				if err != nil {
+					assert.Equal(t, context.DeadlineExceeded, err)
+				}
+				fmt.Println("medium query done for ", time.Since(start)," ", now)
+			}
+		}
+	}()
+
+
+	time.Sleep(180*time.Second)
+	hardTicker.Stop()
+	mediumTicker.Stop()
+	done<-true
+	fmt.Println("we re done")
 }
 func ShowDatabases() {
 	var err error
@@ -369,12 +384,194 @@ func BenchmarkBench(b *testing.B) {
 	  procs = procs.Filter(filterDB, filterState)
 	  assert.Len(b, procs, 0)*/
 
+func BenchmarkHardQuery(b *testing.B){
+	var err error
+	var dbStd *sql.DB
+	testMu.Lock()
+	benchTestConfig := sqlConfig
+	testMu.Unlock()
+	benchTestConfig.DBName = "BigBench"
+	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
+	assert.NoError(b, err)
+	dbStd, err = sql.Open(driverName, // Cancelable driver instead of mysql
+		benchTestConfig.FormatDSN())
+	var conn driver.Conn
+	conn, err = dbStd.Driver().Open(benchTestConfig.FormatDSN())
+	canconn := cancellableMysqlConn{
+		conn: conn,
+		killerPool: dbStd,
+		connectionID: "1",
+		kto: 100000000*time.Second,
+	}
+	nvs := []driver.NamedValue{}
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	procs, err := helperFullProcessList(dbStd)
+	assert.NoError(b, err)
+	filterDB := func(m mySQLProcInfo) bool { return m.DB == benchTestConfig.DBName }
+	filterState := func(m mySQLProcInfo) bool { return m.State == "executing" }
+	procs = procs.Filter(filterDB, filterState)
+	assert.Len(b, procs, 0)
+	b.N = iterationCount
+	for i := 0; i < b.N; i++ {
+		// go func() {
+		queryctx, querycancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer querycancel()
+		_, err = canconn.QueryContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a",nvs)
+		assert.Equal(b, context.DeadlineExceeded, err)
+	}
+}
+func BenchmarkHardQueryDefault(b *testing.B){
+	var err error
+	var dbStd *sql.DB
+	testMu.Lock()
+	benchTestConfig := sqlConfig
+	testMu.Unlock()
+	benchTestConfig.DBName = "BigBench"
+	assert.NoError(b, err)
+	dbStd, err = sql.Open(driverName, benchTestConfig.FormatDSN())
+	if err != nil {
+		log.Fatal(err)
+	}
+	procs, err := helperFullProcessList(dbStd)
+	assert.NoError(b, err)
+	filterDB := func(m mySQLProcInfo) bool { return m.DB == benchTestConfig.DBName }
+	filterState := func(m mySQLProcInfo) bool { return m.State == "executing" }
+	procs = procs.Filter(filterDB, filterState)
+	assert.Len(b, procs, 0)
+	b.N = iterationCount
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		queryctx, querycancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer querycancel()
+		fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a")
+		assert.Equal(b, context.DeadlineExceeded, err)
+	}
+}
+func BenchmarkSimpleQueries(b *testing.B){
+	var err error
+	var rows *sql.Rows
+	_ = rows
+	var dbStd *sql.DB
+	testMu.Lock()
+	benchTestConfig := sqlConfig
+	testMu.Unlock()
+	benchTestConfig.DBName = "BigBench"
+	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
+	assert.NoError(b, err)
+	dbStd, err = sql.Open(driverName, // Cancelable driver instead of mysql
+		benchTestConfig.FormatDSN())
+	if err != nil {
+		log.Fatal(err)
+	}
+	procs, err := helperFullProcessList(dbStd)
+	assert.NoError(b, err)
+	filterDB := func(m mySQLProcInfo) bool { return m.DB == benchTestConfig.DBName }
+	filterState := func(m mySQLProcInfo) bool { return m.State == "executing" }
+	procs = procs.Filter(filterDB, filterState)
+	assert.Len(b, procs, 0)
+	b.N = iterationCount
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// go func() {
+		queryctx, querycancel := context.WithTimeout(context.Background(), 10000*time.Millisecond)
+		_ = queryctx
+		defer querycancel()
+		rows, err = dbStd.QueryContext(queryctx, "select a from abobd where o = 1")
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+func ShowDatabases (){
+	var err error
+	var rows *sql.Rows
+	rows, err = systemdb.Query("show databases")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+	second_params := make([]string, 0)
+	for rows.Next() {
+		var second string
+		if err := rows.Scan(&second); err != nil {
+			log.Fatal(err)
+		}
+		second_params = append(second_params, second)
+	}
+	log.Println("all the bases")
+	log.Println(strings.Join(second_params, " "))
+}
+func CheckRows(db *sql.DB) int {
+	var err error
+	var rows *sql.Rows
+	queryctx, querycancel := context.WithTimeout(context.Background(), 100000000*time.Millisecond)
+	defer querycancel()
+	rows, err = db.QueryContext(queryctx, "select count(*) from abobd")
+	if err != nil {
+		log.Fatal(err)
+	}
+	for rows.Next() {
+		var first int
+		if err := rows.Scan(&first); err != nil {
+			log.Fatal(err)
+		}
+		return first
+	}
+	return 0
+}
+func TestSimple(t *testing.T){
+	var err error
+	var rows *sql.Rows
+	_ = rows
+	var dbStd *sql.DB
+	_ = dbStd
+	testMu.Lock()
+	benchTestConfig := sqlConfig
+	testMu.Unlock()
+	benchTestConfig.DBName = "BigBench"
+	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
+	assert.NoError(t, err)
+	dbStd, err = sql.Open(driverName, // Cancelable driver instead of mysql
+		benchTestConfig.FormatDSN())
+	if err != nil {
+		log.Fatal(err)
+	}
+	time.Sleep(60* time.Second)
+	//log.Printf("%d", CheckRows(dbStd))
+	//FillDataBaseTable(dbStd, rowsCount)
+}
+func BenchmarkBench(b *testing.B) {
+	var err error
+	var dbStd *sql.DB
+	testMu.Lock()
+	benchTestConfig := sqlConfig
+	testMu.Unlock()
+	benchTestConfig.DBName = "BigBench"
+	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
+	assert.NoError(b, err)
+	dbStd, err = sql.Open(driverName, // Cancelable driver instead of mysql
+		benchTestConfig.FormatDSN())
+	if err != nil {
+		log.Fatal(err)
+	}
+	//TODO: Посмотреть почему processList ломается:
+	/*procs, err := helperFullProcessList(dbStd)
+	  assert.NoError(b, err)*/
+	// выводит между
+	/*filterDB := func(m mySQLProcInfo) bool { return m.DB == benchTestConfig.DBName }
+	  filterState := func(m mySQLProcInfo) bool { return m.State == "executing" }
+	  procs = procs.Filter(filterDB, filterState)
+	  assert.Len(b, procs, 0)*/
+
 	// CreateDatabaseTable(dbStd)
 
 	// FillDataBaseTable(dbStd, rowsCount)
 
 	b.N = iterationCount
-
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// go func() {
 		queryctx, querycancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
@@ -382,17 +579,15 @@ func BenchmarkBench(b *testing.B) {
 		defer querycancel()
 		//log.Printf("%d", CheckRows(dbStd))
 
-		if i%10 == 0 {
-			rows, err = dbStd.QueryContext(queryctx, "select count(*) from abobd as one left join abobd as two on one.o != two.o left join abobd as three on one.o != three.o left join abobd as four on one.o != four.o")
+		if i % 10 ==0 {
+			fakeRows, err = dbStd.QueryContext(queryctx, "select count(*) from abobd as one left join abobd as two on one.o != two.o left join abobd as three on one.o != three.o left join abobd as four on one.o != four.o")
 			assert.Equal(b, context.DeadlineExceeded, err)
-		} else {
-			rows, err = dbStd.QueryContext(queryctx, "select a from abobd where o = 1")
+		} else{
+			fakeRows, err = dbStd.QueryContext(queryctx, "select a from abobd where o = 1")
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
-		_ = rows
-
 		/*defer rows.Close()
 		   first_params := make([]int, 0)
 		   second_params := make([]string, 0)
@@ -420,3 +615,5 @@ func BenchmarkBench(b *testing.B) {
 		// }()
 	}
 }
+
+
