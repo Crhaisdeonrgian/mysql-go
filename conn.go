@@ -20,8 +20,10 @@ type cancellableMysqlConn struct {
 }
 
 func new_cancellableMySQLConn(conn driver.Conn, db *sql.DB, ConnectionID string, kto time.Duration) *cancellableMysqlConn{
-	_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0))
-	log.Printf("New connection %s created!", ConnectionID)
+	if DebugMode {
+		_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0))
+		log.Printf("New connection %s created!", ConnectionID)
+	}
 	return &cancellableMysqlConn{conn, db, ConnectionID, kto}
 }
 
