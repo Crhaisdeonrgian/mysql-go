@@ -6,11 +6,14 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
 	"github.com/ory/dockertest"
 	"github.com/ory/dockertest/docker"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -18,9 +21,6 @@ import (
 	"testing"
 	"text/tabwriter"
 	"time"
-
-	"github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
 )
 
 
@@ -206,24 +206,35 @@ Loop:
 
 func CreateDatabaseTable(db *sql.DB) {
 	var err error
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS abobd  (o int AUTO_INCREMENT PRIMARY KEY, a varchar(40) )")
+	//_, err = db.Exec("DROP TABLE abobd")
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS abobd  (o int AUTO_INCREMENT PRIMARY KEY, aa nvarchar(1025), bb nvarchar(1025), cc nvarchar(1025), dd nvarchar(1025) )")
 	fmt.Println("2")
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890йцукенгшщзхъфывапролджэёячсмитьбюЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЁЯЧСМИТЬБЮ"
+
+func RandStringBytes() string {
+	b := make([]byte, 1024)
+	for i := range b {
+		b[i] = letterBytes[rand.Int63()%194]
+	}
+	return string(b)
+}
+
 func FillDataBaseTable(db *sql.DB, count int) {
 	var tx *sql.Tx
 	var err error
-	for i := 3; i < 3+count; i++ {
-		currentctx, currentcancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	for i := 0; i < count; i++ {
+		currentctx, currentcancel := context.WithTimeout(context.Background(), 12*time.Hour)
 		defer currentcancel()
 		tx, err = db.BeginTx(currentctx, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
-		_, err = tx.ExecContext(currentctx, "INSERT INTO abobd(a) VALUES (?)", "2"+strconv.Itoa(i))
+		_, err = tx.ExecContext(currentctx, "INSERT INTO abobd(aa, bb, cc, dd) VALUES (?,?,?,?)", RandStringBytes(), RandStringBytes(), RandStringBytes(), RandStringBytes())
 		if err != nil {
 			log.Fatal(err, tx.Rollback())
 		}
@@ -235,7 +246,7 @@ func FillDataBaseTable(db *sql.DB, count int) {
 	}
 }
 
-const rowsCount = 10000
+const rowsCount = 100000
 const iterationCount = 100
 var fakeRows *sql.Rows
 
@@ -290,7 +301,7 @@ func TestDemo(t *testing.T){
 	}()
 
 
-	time.Sleep(180*time.Second)
+	time.Sleep(18*time.Second)
 	hardTicker.Stop()
 	mediumTicker.Stop()
 	done<-true
@@ -445,15 +456,15 @@ func TestSimple(t *testing.T){
 	benchTestConfig := sqlConfig
 	testMu.Unlock()
 	benchTestConfig.DBName = "BigBench"
-	_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
-	assert.NoError(t, err)
+	//_, err = systemdb.Exec("create database if not exists " + benchTestConfig.DBName)
+	//assert.NoError(t, err)
 	dbStd, err = sql.Open(driverName, // Cancelable driver instead of mysql
 		benchTestConfig.FormatDSN())
 	if err != nil {
 		log.Fatal(err)
 	}
-	time.Sleep(60* time.Second)
-	//log.Printf("%d", CheckRows(dbStd))
+	log.Printf("%d", CheckRows(dbStd))
+	//CreateDatabaseTable(dbStd)
 	//FillDataBaseTable(dbStd, rowsCount)
 }
 func BenchmarkBench(b *testing.B) {
