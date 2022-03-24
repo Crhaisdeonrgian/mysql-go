@@ -17,7 +17,7 @@ func simplebanch(N int, testingFunction func()) {
 		go func(i int) {
 			var startPoint = time.Now()
 			defer func() {
-				channels[i] <- time.Since(startPoint).Nanoseconds()
+				channels[i] <- time.Since(startPoint).Milliseconds()
 			}()
 			testingFunction()
 		}(i)
@@ -25,7 +25,7 @@ func simplebanch(N int, testingFunction func()) {
 	for _, ch := range channels {
 		sum += <-ch
 	}
-	fmt.Printf("BENCHMARK %s ON %d ATTEMPTS.\n RESULT: %d NANOSECONDS", GetFunctionName(testingFunction), N, sum/int64(N))
+	fmt.Printf("BENCHMARK %s ON %d ATTEMPTS.\n RESULT: %d MILLISECONDS", GetFunctionName(testingFunction), N, sum/int64(N))
 }
 
 func GetFunctionName(i interface{}) string {
