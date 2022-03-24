@@ -86,7 +86,7 @@ func (c *cancellableConnector) Connect(ctx context.Context) (driver.Conn, error)
 	}
 
 	if c.killPool == nil {
-		return new_cancellableMysqlConn(conn, c.killPool, connectionID, c.killTimeout), nil
+		return new_cancellableMySQLConn(conn, c.killPool, connectionID, c.killTimeout), nil
 	}
 	return new_cancellableMySQLConn(conn, c.killPool, connectionID, c.killTimeout), nil
 }
