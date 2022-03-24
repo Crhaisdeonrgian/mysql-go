@@ -34,7 +34,9 @@ func determineConnectionId(ctx context.Context, conn driver.Conn) (string, error
 
 	var value = queryResult[0]
 	var connectionID = string(value.([]uint8))
-	log.Printf("Connection with ID=%s was determined!", connectionID)
+	if DebugMode {
+		log.Printf("Connection with ID=%s was determined!", connectionID)
+	}
 	return connectionID, nil
 }
 
@@ -53,7 +55,9 @@ func kill(db *sql.DB, connectionID string, kto time.Duration) error {
 
 	if kto == 0 {
 		_, err := db.Exec(qry)
-		fmt.Printf("Connection %s killed\n", connectionID)
+		if DebugMode {
+			fmt.Printf("Connection %s killed\n", connectionID)
+		}
 		if err != nil {
 			return err
 		}
@@ -61,7 +65,7 @@ func kill(db *sql.DB, connectionID string, kto time.Duration) error {
 		ctx, cancelFunc := context.WithTimeout(context.Background(), kto)
 		defer cancelFunc()
 		_, err := db.ExecContext(ctx, qry)
-		if err == nil{
+		if err == nil && DebugMode {
 			_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0))
 			log.Printf("Connection %s has been closed! \n", connectionID)
 		}

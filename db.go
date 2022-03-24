@@ -22,6 +22,8 @@ var originalDriver = mysql.MySQLDriver{}
 
 var CancelModeUsage bool
 
+var DebugMode bool
+
 func init() {
 	sql.Register(cancellableDriverName, &CancellableMySQLDriver{})
 }

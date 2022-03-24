@@ -83,6 +83,7 @@ type mySQLProcsInfo []mySQLProcInfo
 
 func init() {
 	CancelModeUsage = true
+	DebugMode = false
 }
 
 func helperFullProcessList(db *sql.DB) (mySQLProcsInfo, error) {
