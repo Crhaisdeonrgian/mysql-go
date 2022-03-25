@@ -11,8 +11,10 @@ import (
 	"github.com/ory/dockertest"
 	"github.com/ory/dockertest/docker"
 	"github.com/stretchr/testify/assert"
+	"gonum.org/v1/plot/plotter"
 	"io/ioutil"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"strconv"
@@ -26,9 +28,18 @@ import (
 type queryComplexity int
 
 const (
-	SimpleQuery queryComplexity = 0
-	MediumQuery                 = 1
-	HardQuery                   = 2
+	SimpleComplQuery queryComplexity = 0
+	MediumComplQuery = 1
+	HardComplQuery   = 2
+)
+
+const (
+	HardQuery string = "select * from abobd first join abobd second on second.o<5 where first.aa like '%a%' order by first.bb desc, first.aa asc"
+	MediumQuery = "select * from abobd where o<50000 order by bb desc, aa asc"
+)
+const (
+	IgorMountPoint string = "/Users/igorvozhga/DIPLOMA/mountDir:/var/lib/mysql"
+	MikeMountPoint ="/home/user/go/mounts:/var/lib/mysql"
 )
 
 func TestBench(t *testing.T) {
@@ -36,7 +47,7 @@ func TestBench(t *testing.T) {
 }
 func foo() {
 	var complexity queryComplexity
-	complexity = HardQuery
+	complexity = HardComplQuery
 	var err error
 	var dbStd *sql.DB
 	testMu.Lock()
@@ -50,13 +61,13 @@ func foo() {
 	}
 	queryctx, querycancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer querycancel()
-	if complexity == HardQuery {
+	if complexity == HardComplQuery {
 		_, err = dbStd.QueryContext(queryctx, "select * from abobd first join abobd second on second.o<5 where first.aa like '%a%' order by first.bb desc, first.aa asc")
 		//167 sec
-	} else if complexity == SimpleQuery {
+	} else if complexity == SimpleComplQuery {
 		_, err = dbStd.QueryContext(queryctx, "select * from abobd where aa")
 		//0.014 sec
-	} else if complexity == MediumQuery {
+	} else if complexity == MediumComplQuery {
 		_, err = dbStd.QueryContext(queryctx, "select * from abobd where o<110000 order by bb desc, aa asc")
 		//5 sec
 	}
@@ -66,7 +77,7 @@ func foo() {
 
 }
 
-const driverName = "mysqlc"
+const driverName = "mysql"
 
 type mySQLProcInfo struct {
 	ID      int64   `db:"Id"`
@@ -82,7 +93,7 @@ type mySQLProcInfo struct {
 type mySQLProcsInfo []mySQLProcInfo
 
 func init() {
-	CancelModeUsage = true
+	CancelModeUsage = false
 	DebugMode = false
 }
 
@@ -147,7 +158,7 @@ func TestMain(m *testing.M) {
 		Repository: "mysql",
 		Tag:        "5.6",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
-		Mounts:     []string{"/home/user/go/mounts:/var/lib/mysql"},
+		Mounts:     []string{IgorMountPoint},
 	}
 	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func(hostcfg *docker.HostConfig) {
 		hostcfg.Memory = 1024 * 1024 * 1024 * 2 //2Gb
@@ -283,64 +294,92 @@ func FillDataBaseTable(db *sql.DB, count int) {
 
 const rowsCount = 400000
 const iterationCount = 100
-
 var fakeRows *sql.Rows
 
-func TestDemo(t *testing.T) {
+func calculationPart(dbStd *sql.DB) plotter.XYs {
+	var err error
+	var xys plotter.XYs
+	var durations = make(chan int64, 120)
+	var averageTime int64
+	var count=0
+	done := make(chan struct{})
+	hardTicker := time.NewTicker(5 * time.Second)
+	mediumTicker := time.NewTicker(2 * time.Second)
+	go func(chan struct{}) {
+		for {
+			select {
+			case <-done:
+				return
+			case <-hardTicker.C:
+				queryctx, querycancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer querycancel()
+				fakeRows, err = dbStd.QueryContext(queryctx, HardQuery)
+				//assert.Equal(t, context.DeadlineExceeded, err)
+				if err != nil && err!=context.DeadlineExceeded {
+					log.Fatal("got error in hardquery:",err)
+				}
+				fmt.Println("hard query done")
+			}
+		}
+	}(done)
+	go func(chan int64, chan struct{}) {
+		for {
+			select {
+			case <-done:
+				close(durations)
+				return
+			case <-mediumTicker.C:
+				//queryctx, querycancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				//defer querycancel()
+				start := time.Now()
+				fakeRows, err = dbStd.Query(MediumQuery)
+				if err != nil {
+					log.Fatal("got error in MediumQuery")
+				}
+				d:=time.Since(start).Milliseconds()
+				log.Println("MediumQuery duration: ", d)
+				durations<-d
+			}
+		}
+	}(durations, done)
+
+	time.Sleep(2 * time.Minute)
+	hardTicker.Stop()
+	mediumTicker.Stop()
+	done <- struct{}{}
+	done <- struct{}{}
+	for currentDuration := range durations{
+		buff := currentDuration
+		averageTime+=buff
+		count++
+		xys = append(xys,struct{X, Y float64}{float64(count), float64(buff)})
+	}
+	averageTime=averageTime/int64(math.Max(float64(count), 1))
+	fmt.Println("Average MediumQuery duration: ",averageTime)
+	return xys
+}
+func connectToDB() *sql.DB{
 	var err error
 	var dbStd *sql.DB
 	testMu.Lock()
 	benchTestConfig := sqlConfig
 	testMu.Unlock()
 	benchTestConfig.DBName = "BigBench"
-	assert.NoError(t, err)
+	if err != nil {
+		log.Fatal(err)
+	}
 	dbStd, err = sql.Open(driverName, benchTestConfig.FormatDSN())
 	if err != nil {
 		log.Fatal(err)
 	}
-	done := make(chan bool)
-	hardTicker := time.NewTicker(5 * time.Second)
-	mediumTicker := time.NewTicker(2 * time.Second)
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case now := <-hardTicker.C:
-				queryctx, querycancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer querycancel()
-				fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one left join abobd as two on one.a != two.a left join abobd as three on one.a != three.a left join abobd as four on one.a != four.a left join abobd as five on one.a != five.a")
-				//assert.Equal(t, context.DeadlineExceeded, err)
-				if err != nil {
-					assert.Equal(t, context.DeadlineExceeded, err)
-				}
-				fmt.Println("hard query done", now)
-			}
-		}
-	}()
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case now := <-mediumTicker.C:
-				queryctx, querycancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer querycancel()
-				start := time.Now()
-				fakeRows, err = dbStd.QueryContext(queryctx, "select * from abobd as one")
-				if err != nil {
-					assert.Equal(t, context.DeadlineExceeded, err)
-				}
-				fmt.Println("medium query done for ", time.Since(start), " ", now)
-			}
-		}
-	}()
+	return dbStd
+}
 
-	time.Sleep(18 * time.Second)
-	hardTicker.Stop()
-	mediumTicker.Stop()
-	done <- true
-	fmt.Println("we re done")
+func TestDemo(t *testing.T) {
+	var xys plotter.XYs
+	dbStd := connectToDB()
+	xys = calculationPart(dbStd)
+	makePlot(xys)
 }
 
 func BenchmarkHardQuery(b *testing.B) {
