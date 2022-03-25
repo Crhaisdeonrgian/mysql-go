@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/KyleBanks/dockerstats"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/ory/dockertest"
@@ -25,6 +26,11 @@ import (
 
 type queryComplexity int
 
+const rowsCount = 400000
+const iterationCount = 100
+
+var fakeRows *sql.Rows
+
 const (
 	SimpleComlQuery queryComplexity = 0
 	MediumComlQuery                 = 1
@@ -33,7 +39,7 @@ const (
 
 const (
 	SimpleQuery string = "select * from abobd where aa"
-	MediumQuery        = "select * from abobd where o<110000 order by bb desc, aa asc"
+	MediumQuery        = "select * from abobd where o<10000 order by bb desc, aa asc"
 	HardQuery          = "select * from abobd first join abobd second on second.o<5 where first.aa like '%a%' order by first.bb desc, first.aa asc"
 )
 
@@ -41,6 +47,34 @@ const (
 	IgorMountPoint string = "/Users/igorvozhga/DIPLOMA/mountDir:/var/lib/mysql"
 	MikeMountPoint        = "/home/user/go/mounts:/var/lib/mysql"
 )
+var driverName string
+func init() {
+	driverName = "mysqlc"
+	CancelModeUsage = true
+	DebugMode = false
+}
+
+type mySQLProcInfo struct {
+	ID      int64   `db:"Id"`
+	User    string  `db:"User"`
+	Host    string  `db:"Host"`
+	DB      string  `db:"db"`
+	Command string  `db:"Command"`
+	Time    int     `db:"Time"`
+	State   string  `db:"State"`
+	Info    *string `db:"Info"`
+}
+// nolint:gochecknoglobals
+var dockerPool *dockertest.Pool // the connection to docker
+// nolint:gochecknoglobals
+var systemdb *sql.DB // the connection to the mysql 'system' database
+// nolint:gochecknoglobals
+var sqlConfig *mysql.Config // the mysql container and config for connecting to other databases
+// nolint:gochecknoglobals
+var testMu *sync.Mutex // controls access to sqlConfig
+
+type mySQLProcsInfo []mySQLProcInfo
+
 
 func TestBench(t *testing.T) {
 	simplebanch(1, foo)
@@ -77,26 +111,6 @@ func foo() {
 
 }
 
-var driverName = "mysqlc"
-
-type mySQLProcInfo struct {
-	ID      int64   `db:"Id"`
-	User    string  `db:"User"`
-	Host    string  `db:"Host"`
-	DB      string  `db:"db"`
-	Command string  `db:"Command"`
-	Time    int     `db:"Time"`
-	State   string  `db:"State"`
-	Info    *string `db:"Info"`
-}
-
-type mySQLProcsInfo []mySQLProcInfo
-
-func init() {
-	driverName = "mysql"
-	CancelModeUsage = true
-	DebugMode = false
-}
 
 func helperFullProcessList(db *sql.DB) (mySQLProcsInfo, error) {
 	dbx := sqlx.NewDb(db, driverName)
@@ -135,15 +149,6 @@ func (ms mySQLProcsInfo) Filter(fns ...func(m mySQLProcInfo) bool) (result mySQL
 	return result
 }
 
-// nolint:gochecknoglobals
-var dockerPool *dockertest.Pool // the connection to docker
-// nolint:gochecknoglobals
-var systemdb *sql.DB // the connection to the mysql 'system' database
-// nolint:gochecknoglobals
-var sqlConfig *mysql.Config // the mysql container and config for connecting to other databases
-// nolint:gochecknoglobals
-var testMu *sync.Mutex // controls access to sqlConfig
-
 func TestOptions(t *testing.T) {
 	time.Sleep(1 * time.Minute)
 }
@@ -162,7 +167,7 @@ func TestMain(m *testing.M) {
 		Repository: "mysql",
 		Tag:        "5.6",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
-		Mounts:     []string{MikeMountPoint},
+		Mounts:     []string{IgorMountPoint},
 	}
 	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func(hostcfg *docker.HostConfig) {
 		hostcfg.CPUCount = 1
@@ -244,11 +249,6 @@ func FillDataBaseTable(db *sql.DB, count int) {
 	}
 }
 
-const rowsCount = 400000
-const iterationCount = 100
-
-var fakeRows *sql.Rows
-
 func calculationPart(dbStd *sql.DB) plotter.XYs {
 	var err error
 	var xys plotter.XYs
@@ -258,6 +258,7 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 	var done = make(chan struct{})
 	hardTicker := time.NewTicker(5 * time.Second)
 	mediumTicker := time.NewTicker(2 * time.Second)
+	m := dockerstats.NewMonitor()
 	go func(chan int64, chan struct{}) {
 		for {
 			select {
@@ -297,17 +298,23 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 			}
 		}
 	}(durations, done)
-	time.Sleep(120 * time.Second)
+	time.Sleep(20 * time.Second)
 	hardTicker.Stop()
 	mediumTicker.Stop()
 	done <- struct{}{}
 
-	file, err := os.Create(MikeFilePath + driverName + ".csv")
+	file, err := os.Create(IgorFilePath + driverName + ".csv")
 	if err != nil {
 		fmt.Println("Unable to create file:", err)
 		os.Exit(1)
 	}
+	statfile, err := os.Create( IgorFilePath + driverName + "stats.csv")
+	if err != nil {
+		log.Fatal("Unable to create statfile", err)
+		os.Exit(1)
+	}
 	defer file.Close()
+	defer statfile.Close()
 
 	for currentDuration := range durations {
 		file.WriteString(fmt.Sprint(currentDuration) + "\n")
@@ -315,6 +322,14 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 		averageTime += buff
 		count++
 		xys = append(xys, struct{ X, Y float64 }{float64(count), float64(buff)})
+	}
+	for res := range m.Stream {
+		if res.Error!=nil {
+			log.Fatal("cannot get docker stats", res.Error)
+		}
+		for _, s := range res.Stats{
+			statfile.WriteString(s.String() + "\n")
+		}
 	}
 	averageTime = averageTime / int64(math.Max(float64(count), 1))
 	fmt.Println("Average MediumQuery duration: ", averageTime)

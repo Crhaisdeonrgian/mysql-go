@@ -16,7 +16,7 @@ const (
 type xy struct{ x, y float64 }
 
 func makePlot(xys plotter.XYs) {
-	f, err := os.Create(MikeFilePath + "plot.png")
+	f, err := os.Create(IgorFilePath + "plot.png")
 	if err != nil {
 		log.Fatal("cannot open file ", err)
 	}
