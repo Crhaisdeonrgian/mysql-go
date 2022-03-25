@@ -28,15 +28,17 @@ import (
 type queryComplexity int
 
 const (
-	SimpleComplQuery queryComplexity = 0
-	MediumComplQuery = 1
-	HardComplQuery   = 2
+	SimpleComlQuery queryComplexity = 0
+	MediumComlQuery                 = 1
+	HardComlQuery                   = 2
 )
 
 const (
-	HardQuery string = "select * from abobd first join abobd second on second.o<5 where first.aa like '%a%' order by first.bb desc, first.aa asc"
-	MediumQuery = "select * from abobd where o<50000 order by bb desc, aa asc"
+	SimpleQuery string = "select * from abobd where aa"
+	MediumQuery        = "select * from abobd where o<110000 order by bb desc, aa asc"
+	HardQuery          = "select * from abobd first join abobd second on second.o<5 where first.aa like '%a%' order by first.bb desc, first.aa asc"
 )
+
 const (
 	IgorMountPoint string = "/Users/igorvozhga/DIPLOMA/mountDir:/var/lib/mysql"
 	MikeMountPoint ="/home/user/go/mounts:/var/lib/mysql"
@@ -47,7 +49,7 @@ func TestBench(t *testing.T) {
 }
 func foo() {
 	var complexity queryComplexity
-	complexity = HardComplQuery
+	complexity = HardComlQuery
 	var err error
 	var dbStd *sql.DB
 	testMu.Lock()
@@ -61,14 +63,14 @@ func foo() {
 	}
 	queryctx, querycancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer querycancel()
-	if complexity == HardComplQuery {
-		_, err = dbStd.QueryContext(queryctx, "select * from abobd first join abobd second on second.o<5 where first.aa like '%a%' order by first.bb desc, first.aa asc")
-		//167 sec
-	} else if complexity == SimpleComplQuery {
-		_, err = dbStd.QueryContext(queryctx, "select * from abobd where aa")
+	if complexity == HardComlQuery {
+		_, err = dbStd.QueryContext(queryctx, HardQuery)
+		//2-3 min
+	} else if complexity == SimpleComlQuery {
+		_, err = dbStd.QueryContext(queryctx, SimpleQuery)
 		//0.014 sec
-	} else if complexity == MediumComplQuery {
-		_, err = dbStd.QueryContext(queryctx, "select * from abobd where o<110000 order by bb desc, aa asc")
+	} else if complexity == MediumComlQuery {
+		_, err = dbStd.QueryContext(queryctx, MediumQuery)
 		//5 sec
 	}
 	if err != context.DeadlineExceeded && err != nil {
@@ -77,7 +79,7 @@ func foo() {
 
 }
 
-const driverName = "mysql"
+const driverName = "mysqlc"
 
 type mySQLProcInfo struct {
 	ID      int64   `db:"Id"`
@@ -93,7 +95,7 @@ type mySQLProcInfo struct {
 type mySQLProcsInfo []mySQLProcInfo
 
 func init() {
-	CancelModeUsage = false
+	CancelModeUsage = true
 	DebugMode = false
 }
 
@@ -143,6 +145,9 @@ var sqlConfig *mysql.Config // the mysql container and config for connecting to 
 // nolint:gochecknoglobals
 var testMu *sync.Mutex // controls access to sqlConfig
 
+func TestOptions(t *testing.T) {
+	time.Sleep(1 * time.Minute)
+}
 func TestMain(m *testing.M) {
 	_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0)) // silence mysql logger
 	testMu = &sync.Mutex{}
@@ -158,9 +163,10 @@ func TestMain(m *testing.M) {
 		Repository: "mysql",
 		Tag:        "5.6",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
-		Mounts:     []string{IgorMountPoint},
+		Mounts:     []string{MikeMountPoint},
 	}
 	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func(hostcfg *docker.HostConfig) {
+		hostcfg.CPUCount = 1
 		hostcfg.Memory = 1024 * 1024 * 1024 * 2 //2Gb
 	})
 	if err != nil {
