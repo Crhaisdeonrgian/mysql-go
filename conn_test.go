@@ -167,7 +167,7 @@ func TestMain(m *testing.M) {
 	}
 	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func(hostcfg *docker.HostConfig) {
 		hostcfg.CPUCount = 1
-		hostcfg.Memory = 1024 * 1024 * 1024 * 2 //2Gb
+		hostcfg.Memory = 1024 * 1024 * 1024 * 1 //2Gb
 	})
 	if err != nil {
 		log.Fatalf("could not start mysqlContainer: %s", err)
@@ -304,6 +304,7 @@ var fakeRows *sql.Rows
 
 func calculationPart(dbStd *sql.DB) plotter.XYs {
 	var err error
+<<<<<<< HEAD
 	var xys plotter.XYs
 	var durations = make(chan int64, 120)
 	var averageTime int64
@@ -312,6 +313,22 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 	hardTicker := time.NewTicker(5 * time.Second)
 	mediumTicker := time.NewTicker(2 * time.Second)
 	go func(chan struct{}) {
+=======
+	var dbStd *sql.DB
+	testMu.Lock()
+	benchTestConfig := sqlConfig
+	testMu.Unlock()
+	benchTestConfig.DBName = "BigBench"
+	assert.NoError(t, err)
+	dbStd, err = sql.Open(driverName, benchTestConfig.FormatDSN())
+	if err != nil {
+		log.Fatal(err)
+	}
+	done := make(chan bool)
+	hardTicker := time.NewTicker(3 * time.Second)
+	mediumTicker := time.NewTicker(1 * time.Second)
+	go func() {
+>>>>>>> f4021ec (commit)
 		for {
 			select {
 			case <-done:
@@ -335,21 +352,34 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 				close(durations)
 				return
 			case <-mediumTicker.C:
+<<<<<<< HEAD
 				//queryctx, querycancel := context.WithTimeout(context.Background(), 5*time.Minute)
 				//defer querycancel()
+=======
+				//				queryctx, querycancel := context.WithTimeout(context.Background(), 150*time.Second)
+				//				defer querycancel()
+>>>>>>> f4021ec (commit)
 				start := time.Now()
 				fakeRows, err = dbStd.Query(MediumQuery)
 				if err != nil {
 					log.Fatal("got error in MediumQuery")
 				}
+<<<<<<< HEAD
 				d:=time.Since(start).Milliseconds()
 				log.Println("MediumQuery duration: ", d)
 				durations<-d
+=======
+				fmt.Println("medium query done for ", time.Since(start))
+>>>>>>> f4021ec (commit)
 			}
 		}
 	}(durations, done)
 
+<<<<<<< HEAD
 	time.Sleep(2 * time.Minute)
+=======
+	time.Sleep(60 * time.Second)
+>>>>>>> f4021ec (commit)
 	hardTicker.Stop()
 	mediumTicker.Stop()
 	done <- struct{}{}
