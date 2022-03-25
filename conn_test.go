@@ -77,7 +77,7 @@ func foo() {
 
 }
 
-const driverName = "mysqlc"
+var driverName = "mysqlc"
 
 type mySQLProcInfo struct {
 	ID      int64   `db:"Id"`
@@ -93,6 +93,7 @@ type mySQLProcInfo struct {
 type mySQLProcsInfo []mySQLProcInfo
 
 func init() {
+	driverName = "mysql"
 	CancelModeUsage = true
 	DebugMode = false
 }
@@ -340,7 +341,8 @@ func TestDemo(t *testing.T) {
 	var xys plotter.XYs
 	dbStd := connectToDB()
 	xys = calculationPart(dbStd)
-	makePlot(xys)
+	_ = xys
+	//	makePlot(xys)
 }
 func ShowDatabases() {
 	var err error
