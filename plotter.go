@@ -15,7 +15,6 @@ const(
 type xy struct{ x, y float64 }
 func makePlot(xys plotter.XYs){
 	f, err := os.Create(IgorFileName)
-	f.
 	if err!=nil{
 		log.Fatal("cannot open file ", err)
 	}
