@@ -39,7 +39,7 @@ const (
 
 const (
 	SimpleQuery string = "select * from abobd where aa"
-	MediumQuery        = "select * from abobd where o<10000 order by bb desc, aa asc"
+	MediumQuery        = "select * from abobd where o<110000 order by bb desc, aa asc"
 	HardQuery          = "select * from abobd first join abobd second on second.o<5 where first.aa like '%a%' order by first.bb desc, first.aa asc"
 )
 
@@ -47,7 +47,9 @@ const (
 	IgorMountPoint string = "/Users/igorvozhga/DIPLOMA/mountDir:/var/lib/mysql"
 	MikeMountPoint        = "/home/user/go/mounts:/var/lib/mysql"
 )
+
 var driverName string
+
 func init() {
 	driverName = "mysqlc"
 	CancelModeUsage = true
@@ -64,6 +66,7 @@ type mySQLProcInfo struct {
 	State   string  `db:"State"`
 	Info    *string `db:"Info"`
 }
+
 // nolint:gochecknoglobals
 var dockerPool *dockertest.Pool // the connection to docker
 // nolint:gochecknoglobals
@@ -74,7 +77,6 @@ var sqlConfig *mysql.Config // the mysql container and config for connecting to 
 var testMu *sync.Mutex // controls access to sqlConfig
 
 type mySQLProcsInfo []mySQLProcInfo
-
 
 func TestBench(t *testing.T) {
 	simplebanch(1, foo)
@@ -110,7 +112,6 @@ func foo() {
 	}
 
 }
-
 
 func helperFullProcessList(db *sql.DB) (mySQLProcsInfo, error) {
 	dbx := sqlx.NewDb(db, driverName)
@@ -150,7 +151,7 @@ func (ms mySQLProcsInfo) Filter(fns ...func(m mySQLProcInfo) bool) (result mySQL
 }
 
 func TestOptions(t *testing.T) {
-	time.Sleep(1 * time.Minute)
+	time.Sleep(30 * time.Second)
 }
 func TestMain(m *testing.M) {
 	_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0)) // silence mysql logger
@@ -167,11 +168,12 @@ func TestMain(m *testing.M) {
 		Repository: "mysql",
 		Tag:        "5.6",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
-		Mounts:     []string{IgorMountPoint},
+		Mounts:     []string{MikeMountPoint},
 	}
 	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func(hostcfg *docker.HostConfig) {
 		hostcfg.CPUCount = 1
-		hostcfg.Memory = 1024 * 1024 * 1024 * 1 //2Gb
+		//hostcfg.CPUPercent = 100
+		hostcfg.Memory = 1024 * 1024 * 1024 * 1 //1Gb
 	})
 	if err != nil {
 		log.Fatalf("could not start mysqlContainer: %s", err)
@@ -256,14 +258,23 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 	var averageTime int64
 	var count = 0
 	var done = make(chan struct{})
+	var stats = make(chan []dockerstats.Stats, 180)
 	hardTicker := time.NewTicker(5 * time.Second)
 	mediumTicker := time.NewTicker(2 * time.Second)
-	m := dockerstats.NewMonitor()
-	go func(chan int64, chan struct{}) {
+	statTicker := time.NewTicker(1 * time.Second)
+
+	go func(chan int64, chan struct{}, chan []dockerstats.Stats) {
 		for {
 			select {
+			case <-statTicker.C:
+				s, err := dockerstats.Current()
+				if err != nil {
+					log.Println("Unable to get stats ", err)
+				}
+				stats <- s
 			case <-done:
 				close(durations)
+				close(stats)
 				return
 			case <-hardTicker.C:
 				go func() {
@@ -280,7 +291,7 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 					start := time.Now()
 					fakeRows, err = dbStd.Query(MediumQuery)
 					if err != nil {
-						log.Fatal("got error in MediumQuery")
+						log.Fatal("got error in MediumQuery ", err)
 					}
 
 					select {
@@ -297,18 +308,19 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 				}(durations)
 			}
 		}
-	}(durations, done)
-	time.Sleep(20 * time.Second)
+	}(durations, done, stats)
+	time.Sleep(180 * time.Second)
 	hardTicker.Stop()
 	mediumTicker.Stop()
+	statTicker.Stop()
 	done <- struct{}{}
 
-	file, err := os.Create(IgorFilePath + driverName + ".csv")
+	file, err := os.Create(MikeFilePath + driverName + ".csv")
 	if err != nil {
 		fmt.Println("Unable to create file:", err)
 		os.Exit(1)
 	}
-	statfile, err := os.Create( IgorFilePath + driverName + "stats.csv")
+	statfile, err := os.Create(MikeFilePath + driverName + "stats.csv")
 	if err != nil {
 		log.Fatal("Unable to create statfile", err)
 		os.Exit(1)
@@ -317,18 +329,21 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 	defer statfile.Close()
 
 	for currentDuration := range durations {
-		file.WriteString(fmt.Sprint(currentDuration) + "\n")
+		_, err = file.WriteString(fmt.Sprint(currentDuration) + "\n")
+		if err != nil {
+			log.Fatal("Unable to write in file", err)
+		}
 		buff := currentDuration
 		averageTime += buff
 		count++
 		xys = append(xys, struct{ X, Y float64 }{float64(count), float64(buff)})
 	}
-	for res := range m.Stream {
-		if res.Error!=nil {
-			log.Fatal("cannot get docker stats", res.Error)
-		}
-		for _, s := range res.Stats{
-			statfile.WriteString(s.String() + "\n")
+	for stat := range stats {
+		for _, s := range stat {
+			_, err = statfile.WriteString(s.CPU + "," + s.Memory.Percent + "\n")
+			if err != nil {
+				log.Fatal("Cannot write into file", err)
+			}
 		}
 	}
 	averageTime = averageTime / int64(math.Max(float64(count), 1))
@@ -357,7 +372,7 @@ func TestDemo(t *testing.T) {
 	dbStd := connectToDB()
 	xys = calculationPart(dbStd)
 	_ = xys
-	//	makePlot(xys)
+	makePlot(xys)
 }
 func ShowDatabases() {
 	var err error
