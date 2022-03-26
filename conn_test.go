@@ -258,12 +258,13 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 	var averageTime int64
 	var count = 0
 	var done = make(chan struct{})
+	var test_ended = make(chan struct{})
 	var stats = make(chan []dockerstats.Stats, 180)
 	hardTicker := time.NewTicker(5 * time.Second)
 	mediumTicker := time.NewTicker(2 * time.Second)
 	statTicker := time.NewTicker(1 * time.Second)
 
-	go func(chan int64, chan struct{}, chan []dockerstats.Stats) {
+	go func(chan int64, chan struct{}, chan struct{}, chan []dockerstats.Stats) {
 		for {
 			select {
 			case <-statTicker.C:
@@ -275,6 +276,7 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 			case <-done:
 				close(durations)
 				close(stats)
+				close(test_ended)
 				return
 			case <-hardTicker.C:
 				go func() {
@@ -287,7 +289,7 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 					fmt.Println("hard query done")
 				}()
 			case <-mediumTicker.C:
-				go func(chan int64) {
+				go func(chan int64, chan struct{}) {
 					start := time.Now()
 					fakeRows, err = dbStd.Query(MediumQuery)
 					if err != nil {
@@ -295,20 +297,23 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 					}
 
 					select {
-					case _, is_open := <-done:
+					case _, is_open := <-test_ended:
 						if is_open {
-							done <- struct{}{}
+							// no one isn't putting anything
+							log.Fatal("how u did it??")
 						} else {
+							// chan closed doing nothing
 						}
 					default:
+						// chan is open so test is running
 						d := time.Since(start).Milliseconds()
 						log.Println("MediumQuery duration: ", d)
 						durations <- d
 					}
-				}(durations)
+				}(durations, test_ended)
 			}
 		}
-	}(durations, done, stats)
+	}(durations, done, test_ended, stats)
 	time.Sleep(180 * time.Second)
 	hardTicker.Stop()
 	mediumTicker.Stop()
