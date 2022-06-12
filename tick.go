@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"log"
 	"math/rand"
 	"time"
 )
@@ -60,8 +61,9 @@ func (rt *RandomTicker) loop() {
 
 func (rt *RandomTicker) nextInterval() time.Duration {
 	interval := 10000000000* rand.ExpFloat64()/rt.mean
-	if(time.Duration(interval).Nanoseconds()>rt.max){
+	if time.Duration(interval).Nanoseconds()>rt.max {
 		interval = float64(rt.max)
 	}
+	log.Println(time.Duration(interval).Seconds())
 	return time.Duration(interval) * time.Nanosecond
 }

@@ -9,9 +9,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 	"github.com/ory/dockertest"
-	"github.com/ory/dockertest/docker"
 	"gonum.org/v1/plot/plotter"
-	"io/ioutil"
 	"log"
 	"math"
 	"math/rand"
@@ -153,7 +151,7 @@ func (ms mySQLProcsInfo) Filter(fns ...func(m mySQLProcInfo) bool) (result mySQL
 func TestOptions(t *testing.T) {
 	time.Sleep(30 * time.Second)
 }
-func TestMain(m *testing.M) {
+/*func TestMain(m *testing.M) {
 	_ = mysql.SetLogger(log.New(ioutil.Discard, "", 0)) // silence mysql logger
 	testMu = &sync.Mutex{}
 
@@ -168,7 +166,7 @@ func TestMain(m *testing.M) {
 		Repository: "mysql",
 		Tag:        "5.6",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
-		Mounts:     []string{MikeMountPoint},
+		Mounts:     []string{IgorMountPoint},
 	}
 	mysqlContainer, err := dockerPool.RunWithOptions(&runOptions, func(hostcfg *docker.HostConfig) {
 		hostcfg.CPUCount = 1
@@ -205,7 +203,7 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(code)
-}
+}*/
 
 func CreateDatabaseTable(db *sql.DB) {
 	var err error
@@ -267,12 +265,12 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 	go func(chan int64, chan struct{}, chan struct{}, chan []dockerstats.Stats) {
 		for {
 			select {
-			case <-statTicker.C:
+			/*case <-statTicker.C:
 				s, err := dockerstats.Current()
 				if err != nil {
 					log.Println("Unable to get stats ", err)
 				}
-				stats <- s
+				stats <- s*/
 			case <-done:
 				close(durations)
 				close(stats)
@@ -379,12 +377,12 @@ func realLoadBench(dbStd *sql.DB) plotter.XYs {
 	go func(chan int64, chan int64, chan struct{}, chan struct{}, chan []dockerstats.Stats) {
 		for {
 			select {
-			case <-statTicker.C:
+			/*case <-statTicker.C:
 				s, err := dockerstats.Current()
 				if err != nil {
 					log.Println("Unable to get stats ", err)
 				}
-				stats <- s
+				stats <- s*/
 			case <-done:
 				close(durations)
 				close(stats)
@@ -392,9 +390,10 @@ func realLoadBench(dbStd *sql.DB) plotter.XYs {
 				return
 			case <-realTicker.C:
 				go func(chan int64, chan int64, chan struct{}) {
+					log.Println("oaoaoaoaoaooaaoo")
 					threadPool<- struct{}{}
 					start := time.Now()
-					fakeRows, err = dbStd.Query(MediumQuery)
+					//fakeRows, err = dbStd.Query(MediumQuery)
 					if err != nil {
 						log.Fatal("got error in MediumQuery ", err)
 					}
@@ -419,6 +418,7 @@ func realLoadBench(dbStd *sql.DB) plotter.XYs {
 		}
 	}(durations, timestamps, done, test_ended, stats)
 	time.Sleep(10 * time.Minute)
+	realTicker.Stop()
 	statTicker.Stop()
 	done <- struct{}{}
 
@@ -478,10 +478,19 @@ func connectToDB() *sql.DB {
 
 func TestDemo(t *testing.T) {
 	var xys plotter.XYs
-	dbStd := connectToDB()
-	xys = calculationPart(dbStd)
+	//dbStd := connectToDB()
+	xys = realLoadBench(nil)
 	_ = xys
 	makePlot(xys)
+}
+func TestHello(t *testing.T) {
+	ticker := NewRandomTicker(1, 100*time.Second)
+	for {
+		select {
+		case <-ticker.C:
+
+		}
+	}
 }
 
 func  TestRandomNumber(t *testing.T) {
