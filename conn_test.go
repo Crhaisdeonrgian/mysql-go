@@ -355,6 +355,108 @@ func calculationPart(dbStd *sql.DB) plotter.XYs {
 	fmt.Println("Average MediumQuery duration: ", averageTime)
 	return xys
 }
+
+
+func distTicker(c chan time.Duration){
+	time.Sleep(<-c)
+
+}
+
+func realLoadBench(dbStd *sql.DB) plotter.XYs {
+	var err error
+	var xys plotter.XYs
+	var durations = make(chan int64, 2000)
+	var averageTime int64
+	var count = 0
+	var done = make(chan struct{})
+	var threadPool = make(chan struct{}, 10)
+	var test_ended = make(chan struct{})
+	var stats = make(chan []dockerstats.Stats, 2000)
+	var timestamps = make(chan int64, 2000)
+	realTicker := NewRandomTicker(2, 1*time.Minute)
+	statTicker := time.NewTicker(1 * time.Second)
+	testStart := time.Now()
+	go func(chan int64, chan int64, chan struct{}, chan struct{}, chan []dockerstats.Stats) {
+		for {
+			select {
+			case <-statTicker.C:
+				s, err := dockerstats.Current()
+				if err != nil {
+					log.Println("Unable to get stats ", err)
+				}
+				stats <- s
+			case <-done:
+				close(durations)
+				close(stats)
+				close(test_ended)
+				return
+			case <-realTicker.C:
+				go func(chan int64, chan int64, chan struct{}) {
+					threadPool<- struct{}{}
+					start := time.Now()
+					fakeRows, err = dbStd.Query(MediumQuery)
+					if err != nil {
+						log.Fatal("got error in MediumQuery ", err)
+					}
+
+					select {
+					case _, is_open := <-test_ended:
+						if is_open {
+							// no one isn't putting anything
+							log.Fatal("how u did it??")
+						} else {
+							// chan closed doing nothing
+						}
+					default:
+						// chan is open so test is running
+						d := time.Since(start).Milliseconds()
+						log.Println("MediumQuery duration: ", d)
+						durations <- d
+						timestamps <- time.Since(testStart).Milliseconds()
+					}
+				}(durations,timestamps, test_ended)
+			}
+		}
+	}(durations, timestamps, done, test_ended, stats)
+	time.Sleep(10 * time.Minute)
+	statTicker.Stop()
+	done <- struct{}{}
+
+	file, err := os.Create(MikeFilePath + driverName + ".csv")
+	if err != nil {
+		fmt.Println("Unable to create file:", err)
+		os.Exit(1)
+	}
+	statfile, err := os.Create(MikeFilePath + driverName + "stats.csv")
+	if err != nil {
+		log.Fatal("Unable to create statfile", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+	defer statfile.Close()
+
+	for currentDuration := range durations {
+		_, err = file.WriteString(fmt.Sprint(<-timestamps) + "," + fmt.Sprint(currentDuration) + "\n")
+		if err != nil {
+			log.Fatal("Unable to write in file", err)
+		}
+		buff := currentDuration
+		averageTime += buff
+		count++
+		xys = append(xys, struct{ X, Y float64 }{float64(count), float64(buff)})
+	}
+	for stat := range stats {
+		for _, s := range stat {
+			_, err = statfile.WriteString(s.CPU + "," + s.Memory.Percent + "\n")
+			if err != nil {
+				log.Fatal("Cannot write into file", err)
+			}
+		}
+	}
+	averageTime = averageTime / int64(math.Max(float64(count), 1))
+	fmt.Println("Average MediumQuery duration: ", averageTime)
+	return xys
+}
 func connectToDB() *sql.DB {
 	var err error
 	var dbStd *sql.DB
@@ -372,6 +474,8 @@ func connectToDB() *sql.DB {
 	return dbStd
 }
 
+
+
 func TestDemo(t *testing.T) {
 	var xys plotter.XYs
 	dbStd := connectToDB()
@@ -379,6 +483,15 @@ func TestDemo(t *testing.T) {
 	_ = xys
 	makePlot(xys)
 }
+
+func  TestRandomNumber(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		interval:=10000000000*rand.ExpFloat64()/2
+		log.Println(time.Duration(interval).Nanoseconds())
+		log.Println(time.Minute.Nanoseconds())
+	}
+}
+
 func ShowDatabases() {
 	var err error
 	var rows *sql.Rows
